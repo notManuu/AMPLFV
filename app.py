@@ -1,5 +1,6 @@
 import streamlit as st
 import pandas as pd
+import numpy as np
 import plotly.graph_objects as go
 
 # --- CONFIGURACIÓN DE LA PÁGINA ---
@@ -9,23 +10,53 @@ st.set_page_config(
     layout="wide"
 )
 
-# --- FUNCIÓN PARA GENERAR EL DASHBOARD ---
-# Creamos una función para no repetir el código.
-# Esta función toma los DataFrames y genera todos los elementos visuales.
-def generate_dashboard(df_paneles, df_inversores, df_subestacion):
-    # --- CÁLCULO DE DIMENSIONES ---
-    max_x = df_paneles['x'].max()
-    max_y = df_paneles['y'].max()
-    margen = 10
-    ancho_terreno = max_x + margen
-    largo_terreno = max_y + margen
+# --- FUNCIÓN PARA GENERAR DATOS DE EJEMPLO ---
+def generate_sample_data(ancho_area, largo_area, num_paneles, num_inversores):
+    """
+    Genera DataFrames de ejemplo para paneles, inversores y subestación.
+    """
+    # 1. Generar Paneles Solares en una cuadrícula
+    num_cols = 10
+    num_rows = 10
+    
+    x_points = np.linspace(0.5, ancho_area - 0.5, num_cols)
+    y_points = np.linspace(0.5, largo_area - 0.5, num_rows)
+    
+    xv, yv = np.meshgrid(x_points, y_points)
+    
+    panel_coords = {
+        'panel_id': range(num_paneles),
+        'x': xv.flatten(),
+        'y': yv.flatten(),
+        'inversor_asignado': [i % num_inversores for i in range(num_paneles)]
+    }
+    df_paneles = pd.DataFrame(panel_coords)
 
+    # 2. Generar Inversores (distribuidos en el área)
+    inversor_coords = {
+        'inversor_id': range(num_inversores),
+        'x': [ancho_area * 0.25, ancho_area * 0.75, ancho_area * 0.25, ancho_area * 0.75],
+        'y': [largo_area * 0.25, largo_area * 0.25, largo_area * 0.75, largo_area * 0.75]
+    }
+    df_inversores = pd.DataFrame(inversor_coords)
+    
+    # 3. Generar Subestación (en una posición fija)
+    subestacion_coords = {
+        'x': [ancho_area / 2],
+        'y': [-2]
+    }
+    df_subestacion = pd.DataFrame(subestacion_coords)
+    
+    return df_paneles, df_inversores, df_subestacion
+
+# --- FUNCIÓN PARA GENERAR EL DASHBOARD (VERSIÓN CON LEYENDA MEJORADA) ---
+def generate_dashboard(df_paneles, df_inversores, df_subestacion, ancho_terreno_definido, largo_terreno_definido):
     # --- MÉTRICAS ---
     st.header("Resumen del Proyecto")
     col1, col2, col3 = st.columns(3)
     col1.metric("Total de Paneles", f"{len(df_paneles)} unidades")
     col2.metric("Total de Inversores", f"{len(df_inversores)} unidades")
-    col3.metric("Área Estimada del Terreno", f"{ancho_terreno * largo_terreno:,.0f} m²")
+    col3.metric("Área del Terreno", f"{ancho_terreno_definido * largo_terreno_definido:,.0f} m²")
 
     st.markdown("---")
 
@@ -36,7 +67,7 @@ def generate_dashboard(df_paneles, df_inversores, df_subestacion):
     # Añadir componentes al gráfico
     fig.add_trace(go.Scatter(
         x=df_paneles['x'], y=df_paneles['y'], mode='markers',
-        marker=dict(color=df_paneles['inversor_asignado'], size=8, colorscale='Viridis', showscale=True, colorbar=dict(title='Inversor ID')),
+        marker=dict(color=df_paneles['inversor_asignado'], size=10, colorscale='Viridis', showscale=True, colorbar=dict(title='Inversor ID')),
         name='Paneles Solares', text=df_paneles.apply(lambda row: f"Panel ID: {row['panel_id']}<br>Inversor: {row['inversor_asignado']}", axis=1), hoverinfo='text'
     ))
     fig.add_trace(go.Scatter(
@@ -50,15 +81,29 @@ def generate_dashboard(df_paneles, df_inversores, df_subestacion):
         text="Subestación", hoverinfo='text'
     ))
     fig.add_shape(
-        type="rect", x0=0, y0=0, x1=ancho_terreno, y1=largo_terreno,
+        type="rect", x0=0, y0=0, x1=ancho_terreno_definido, y1=largo_terreno_definido,
         line=dict(color="RoyalBlue", width=2), fillcolor="LightSkyBlue", opacity=0.1, layer="below"
     )
+    
+    # Actualizamos el layout del gráfico con la nueva configuración de la leyenda
     fig.update_layout(
-        title='Mapa Interactivo de la Planta Fotovoltaica',
-        xaxis_title=f'Ancho del Terreno ({ancho_terreno:.1f} m)', yaxis_title=f'Largo del Terreno ({largo_terreno:.1f} m)',
-        xaxis=dict(range=[-5, ancho_terreno + 5], scaleanchor="y", scaleratio=1), yaxis=dict(range=[-5, largo_terreno + 5]),
-        legend_title_text='Componentes', height=700
+        title='Mapa Interactivo de la Planta Fotovoltaica (10m x 15m)',
+        xaxis_title=f'Ancho del Terreno ({ancho_terreno_definido:.1f} m)', 
+        yaxis_title=f'Largo del Terreno ({largo_terreno_definido:.1f} m)',
+        xaxis=dict(range=[-2, ancho_terreno_definido + 2], scaleanchor="y", scaleratio=1), 
+        yaxis=dict(range=[-3, largo_terreno_definido + 2]),
+        height=750,
+        
+        legend=dict(
+            title='Componentes',
+            orientation="h",
+            yanchor="bottom",
+            y=1.02,
+            xanchor="right",
+            x=1
+        )
     )
+
     st.plotly_chart(fig, use_container_width=True)
 
     # --- BOTÓN DE DESCARGA ---
@@ -73,34 +118,22 @@ def generate_dashboard(df_paneles, df_inversores, df_subestacion):
     st.markdown("---")
 
     # --- TABLA DE DATOS ---
-    st.header("Datos Detallados")
+    st.header("Datos Detallados de Paneles")
     st.dataframe(df_paneles)
 
-# --- BARRA LATERAL PARA CARGAR ARCHIVOS ---
-with st.sidebar:
-    st.header("Cargar Archivos CSV")
-    st.markdown("Sube tus propios archivos para actualizar el dashboard.")
-    uploaded_file_paneles = st.file_uploader("1. Sube el CSV de Paneles", type="csv")
-    uploaded_file_inversores = st.file_uploader("2. Sube el CSV de Inversores", type="csv")
-    uploaded_file_subestacion = st.file_uploader("3. Sube el CSV de Subestación", type="csv")
 
 # --- LÓGICA PRINCIPAL ---
 st.title("☀️ Dashboard de Optimización de Planta Fotovoltaica")
+st.info("Mostrando una distribución de ejemplo con **100 paneles** en un área de **10m x 15m**.")
 
-# Si el usuario subió sus propios archivos, úsalos.
-if uploaded_file_paneles and uploaded_file_inversores and uploaded_file_subestacion:
-    st.success("¡Archivos cargados! Mostrando visualización para tus datos.")
-    df_p = pd.read_csv(uploaded_file_paneles)
-    df_i = pd.read_csv(uploaded_file_inversores)
-    df_s = pd.read_csv(uploaded_file_subestacion)
-    generate_dashboard(df_p, df_i, df_s)
-# Si no, intenta cargar los archivos locales como ejemplo.
-else:
-    st.info("Mostrando datos de ejemplo. Sube tus propios archivos en la barra lateral para actualizarlos.")
-    try:
-        df_p_local = pd.read_csv("coordenadas_paneles.csv")
-        df_i_local = pd.read_csv("coordenadas_inversores.csv")
-        df_s_local = pd.read_csv("coordenadas_subestacion.csv")
-        generate_dashboard(df_p_local, df_i_local, df_s_local)
-    except FileNotFoundError:
-        st.error("No se encontraron los archivos CSV de ejemplo locales. Por favor, sube tus archivos para comenzar.")
+# Definimos las dimensiones del terreno y la cantidad de componentes
+ANCHO_TERRENO = 10
+LARGO_TERRENO = 15
+NUM_PANELES = 100
+NUM_INVERSORES = 4
+
+# Generamos los datos de forma programática
+df_p, df_i, df_s = generate_sample_data(ANCHO_TERRENO, LARGO_TERRENO, NUM_PANELES, NUM_INVERSORES)
+
+# Llamamos a la función que crea todo el dashboard
+generate_dashboard(df_p, df_i, df_s, ANCHO_TERRENO, LARGO_TERRENO)
